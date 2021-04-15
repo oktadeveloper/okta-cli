@@ -41,12 +41,6 @@ import java.util.stream.Collectors;
 @Slf4j
 public class DefaultStartRestClient implements RestClient, StartRestClient {
 
-    /**
-     * The base URL of the service used to create a new Okta account.
-     * This value is NOT exposed as a plugin parameter, but CAN be set using the env var {@code OKTA_CLI_BASE_URL}.
-     */
-    private static final String DEFAULT_API_BASE_URL = "https://start.okta.dev/";
-
     private static final String APPLICATION_JSON = "application/json";
 
     private static final String USER_AGENT_STRING = ApplicationInfo.get().entrySet().stream()
@@ -55,6 +49,16 @@ public class DefaultStartRestClient implements RestClient, StartRestClient {
 
     private final ObjectMapper objectMapper = new ObjectMapper()
             .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+
+    private final String baseUrl;
+
+    public DefaultStartRestClient() {
+        this(Settings.getCliApiUrl());
+    }
+
+    public DefaultStartRestClient(String baseUrl) {
+        this.baseUrl = baseUrl;
+    }
 
     @Override
     public VersionInfo getVersionInfo() throws IOException, RestException {
@@ -131,13 +135,6 @@ public class DefaultStartRestClient implements RestClient, StartRestClient {
     }
 
     private String fullUrl(String relative) {
-        return getApiBaseUrl() + relative;
-    }
-
-    private String getApiBaseUrl() {
-        // Resolve baseURL via ENV Var, System property, and fallback to the default
-        return System.getenv().getOrDefault("OKTA_CLI_BASE_URL",
-                System.getProperties().getProperty("okta.cli.baseUrl",
-                    DEFAULT_API_BASE_URL));
+        return baseUrl + relative;
     }
 }
