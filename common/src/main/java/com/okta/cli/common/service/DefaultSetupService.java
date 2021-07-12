@@ -15,7 +15,6 @@
  */
 package com.okta.cli.common.service;
 
-import com.okta.cli.common.FactorVerificationException;
 import com.okta.cli.common.RestException;
 import com.okta.cli.common.config.MutablePropertySource;
 import com.okta.cli.common.model.OidcProperties;
@@ -44,6 +43,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -63,6 +63,7 @@ public class DefaultSetupService implements SetupService {
 
     private final OidcProperties oidcProperties;
 
+    private final Duration verificationPollingFrequency = Duration.ofSeconds(4);
 
     public DefaultSetupService(OidcProperties oidcProperties) {
         this(new DefaultSdkConfigurationService(),
@@ -121,7 +122,7 @@ public class DefaultSetupService implements SetupService {
                 orgUrl = newOrg.getOrgUrl();
 
                 progressBar.info("OrgUrl: " + orgUrl);
-                progressBar.info("An email has been sent to you with a verification code.");
+                progressBar.info("An account activation email has been sent to you.");
                 return newOrg;
             } catch (RestException e) {
                 throw new ClientConfigurationException("Failed to create Okta Organization. You can register " +
@@ -132,29 +133,30 @@ public class DefaultSetupService implements SetupService {
 
 
     @Override
-    public void verifyOktaOrg(String identifier, RegistrationQuestions registrationQuestions, File oktaPropsFile) throws IOException, ClientConfigurationException {
+    public void verifyOktaOrg(String identifier, RegistrationQuestions registrationQuestions, File oktaPropsFile) throws IOException {
 
         try (ProgressBar progressBar = ProgressBar.create(true)) {
 
             progressBar.info("Check your email");
 
             OrganizationResponse response = null;
-            while(response == null) {
+            while(response == null || !response.isActive()) {
                 try {
-                    // prompt for code
-                    String code = registrationQuestions.getVerificationCode();
-                    response = organizationCreator.verifyNewOrg(identifier, code);
-                } catch (FactorVerificationException e) {
-                    progressBar.info("Invalid Passcode, try again.");
+                    // poll
+                    Thread.sleep(verificationPollingFrequency.toMillis());
+                    response = organizationCreator.verifyNewOrg(identifier);
+                } catch (RestException | InterruptedException e) {
+                    String error = "Failed to verify new Okta Organization. If you have already registered " +
+                                   "use \"okta login\" to configure the Okta CLI";
+                    progressBar.info(error);
+                    throw new IllegalStateException(error, e);
                 }
             }
-            // TODO handle polling in case the org is not ready
 
             sdkConfigurationService.writeOktaYaml(response.getOrgUrl(), response.getApiToken(), oktaPropsFile);
 
             progressBar.info("New Okta Account created!");
             progressBar.info("Your Okta Domain: "+ response.getOrgUrl());
-            progressBar.info("To set your password open this link:\n" + response.getUpdatePasswordUrl());
 
             // TODO demo mode?
         }
